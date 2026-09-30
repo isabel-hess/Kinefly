@@ -1,0 +1,25 @@
+[workspace]
+name = "kinefly"
+version = "0.1.0"
+description = "Standalone (no ROS) Kinefly for recorded .avi, .mp4 and BIAS .ufmf videos"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
+
+[dependencies]
+python = "3.12.*"
+# The tracking code dates from numpy 1.x; stay on 1.x to keep its integer/scalar semantics.
+numpy = ">=1.26,<2"
+# numpy's linear algebra via OpenBLAS; the MKL variant the solver otherwise picks crashes on Windows (missing DLL).
+libblas = { version = "*", build = "*openblas" }
+pyyaml = ">=6"
+
+[pypi-dependencies]
+# OpenCV from PyPI rather than conda-forge: on Windows its window uses the native Win32 backend,
+# where processing window events takes ~1ms.  The conda-forge build's Qt backend takes ~16ms, which
+# stalls realtime tracking every display refresh.
+opencv-python = ">=4.10,<5"
+
+[tasks]
+kinefly = { cmd = "python nodes/kinefly.py" }
+test = { cmd = "python -m unittest discover -s tests -v" }
+compare = { cmd = "python nodes/compare_runs.py" }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import copy
 import cv2
 import numpy as np
@@ -221,7 +221,7 @@ class MotionTrackedBodypart(object):
             self.mask.xMax = None
             self.mask.yMax = None
 
-            rospy.logwarn('%s: Empty mask.' % self.name)      
+            runtime.logwarn('%s: Empty mask.' % self.name)      
             
 
         
@@ -359,7 +359,7 @@ class MotionTrackedBodypart(object):
         
         # Check for handle hits.
         if (self.params['gui'][self.name]['track']):
-            for tagHandle,handle in self.handles.iteritems():
+            for tagHandle,handle in self.handles.items():
                 if (handle.hit_test(ptMouse)):
                     tag = tagHandle
                     break
@@ -375,7 +375,7 @@ class MotionTrackedBodypart(object):
     def draw_handles(self, image):
         # Draw all handle points, or only just the hinge handle.
         if (self.params['gui'][self.name]['track']):
-            for tagHandle,handle in self.handles.iteritems():
+            for tagHandle,handle in self.handles.items():
                 handle.draw(image)
         else:
             tagHandle,handle = ('hinge',self.handles['hinge'])
@@ -550,7 +550,7 @@ class MotionTrackedBodypartPolar(MotionTrackedBodypart):
                                                          theta_1 = max(theta_0a,theta_1a),
                                                          amplifyTheta = 1.0)
             except imageprocessing.TransformException:
-                rospy.logwarn('%s: Mask is outside the image, no points transformed.' % self.name)
+                runtime.logwarn('%s: Mask is outside the image, no points transformed.' % self.name)
                 
             # Find the y value where the black band should be cropped out (but leave at least one raster if image is all-black).
             sumY = np.sum(self.imgRoiFgMaskedPolar,1)

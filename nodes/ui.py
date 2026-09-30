@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import cv2
 import numpy as np
 
@@ -165,7 +165,7 @@ class Button(object):
             self.ptCheckRB     = (int(self.ptCheckCenter[0]+self.widthCheckbox/2), int(self.ptCheckCenter[1]+self.widthCheckbox/2))
 
         else:
-            rospy.logwarn('Error setting button size and position.')
+            runtime.logwarn('Error setting button size and position.')
 
 
     # set_text()

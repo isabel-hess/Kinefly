@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import cv2
 import numpy as np
 from bodypart_intensity import IntensityTrackedBodypart
-from Kinefly.srv import SrvTrackerdata, SrvTrackerdataResponse
-from Kinefly.msg import MsgFlystate, MsgState
+from kinefly_msgs import SrvTrackerdataResponse
+from kinefly_msgs import MsgFlystate, MsgState
 import ui
 from wingbeatdetector import WingbeatDetector
 

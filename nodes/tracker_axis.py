@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import cv2
 import numpy as np
 import ui
@@ -89,7 +89,7 @@ class AxisTracker:
         tag = None
         
         # Check for handle hits.
-        for tagHandle,handle in self.handles.iteritems():
+        for tagHandle,handle in self.handles.items():
             if (handle.hit_test(ptMouse)):
                 tag = tagHandle
                 break
@@ -99,7 +99,7 @@ class AxisTracker:
 
     def draw_handles(self, image):
         # Draw all handle points.
-        for tagHandle,handle in self.handles.iteritems():
+        for tagHandle,handle in self.handles.items():
             handle.draw(image)
 
     
@@ -109,7 +109,7 @@ class AxisTracker:
     def draw(self, image):
         if (self.params['gui'][self.name]['track']):
             # Draw line to indicate the body axis.
-            cv2.line(image, (self.pt1_i[0],self.pt1_i[1]), (self.pt2_i[0],self.pt2_i[1]), self.bgra, 1)
+            cv2.line(image, (int(self.pt1_i[0]),int(self.pt1_i[1])), (int(self.pt2_i[0]),int(self.pt2_i[1])), self.bgra, 1)
 
             self.draw_handles(image)
     

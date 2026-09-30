@@ -4,3 +4,5 @@ bin
 build
 *_gen
 *src
+.pixi/
+*.egg-info

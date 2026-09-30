@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import cv2
 import numpy as np
 from imagewindow import ImageWindow
 import imageprocessing
 from bodypart_motion import MotionTrackedBodypart, MotionTrackedBodypartPolar
-from Kinefly.srv import SrvTrackerdata, SrvTrackerdataResponse
-from Kinefly.msg import MsgFlystate, MsgState
+from kinefly_msgs import SrvTrackerdataResponse
+from kinefly_msgs import MsgFlystate, MsgState
 import ui
 
 
@@ -91,8 +91,6 @@ class TipTracker(MotionTrackedBodypartPolar):
         self.iAngle = 0
         self.iRadius = 0
 
-        # Services, for live intensities plots via live_wing_histograms.py
-        self.service_trackerdata    = rospy.Service('trackerdata_'+self.name, SrvTrackerdata, self.serve_trackerdata_callback)
 
     
     # set_params()
@@ -195,7 +193,7 @@ class TipTracker(MotionTrackedBodypartPolar):
         title2      = 'Diffs'
         intensities = list(self.detector.intensities)
         diffs       = list(np.abs(self.detector.diffs))
-        abscissa    = range(len(intensities)) #range(self.params['gui'][self.name]['radius_inner'], self.params['gui'][self.name]['radius_inner'] + len(intensities))
+        abscissa    = list(range(len(intensities))) #range(self.params['gui'][self.name]['radius_inner'], self.params['gui'][self.name]['radius_inner'] + len(intensities))
         markersH    = [self.iRadius] #self.state.radii
         markersV    = [self.params[self.name]['threshold']]
         

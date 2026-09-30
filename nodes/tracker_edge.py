@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import copy
 import cv2
 import numpy as np
 from imagewindow import ImageWindow
 from bodypart_motion import MotionTrackedBodypart, MotionTrackedBodypartPolar
-from Kinefly.srv import SrvTrackerdata, SrvTrackerdataResponse
-from Kinefly.msg import MsgFlystate, MsgState
+from kinefly_msgs import SrvTrackerdataResponse
+from kinefly_msgs import MsgFlystate, MsgState
 import ui
 
 
@@ -213,8 +213,6 @@ class EdgeTrackerByIntensityProfile(MotionTrackedBodypartPolar):
         self.windowEdges = ImageWindow(False, self.name+'Edges')
         self.set_params(params)
 
-        # Services, for live intensities plots via live_wing_histograms.py
-        self.service_trackerdata    = rospy.Service('trackerdata_'+name, SrvTrackerdata, self.serve_trackerdata_callback)
     
     
     # set_params()
@@ -435,8 +433,6 @@ class EdgeTrackerByHoughTransform(MotionTrackedBodypart):
         self.windowEdges = ImageWindow(False, self.name+'Edges')
         self.set_params(params)
 
-        # Services, for live intensities plots via live_wing_histograms.py
-        self.service_trackerdata    = rospy.Service('trackerdata_'+self.name, SrvTrackerdata, self.serve_trackerdata_callback)
 
     
     # set_params()

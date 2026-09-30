@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import cv2
 import numpy as np
 from imagewindow import ImageWindow
 import imageprocessing
 from bodypart_motion import MotionTrackedBodypart, MotionTrackedBodypartPolar
-from Kinefly.srv import SrvTrackerdata, SrvTrackerdataResponse
-from Kinefly.msg import MsgFlystate, MsgState
+from kinefly_msgs import SrvTrackerdataResponse
+from kinefly_msgs import MsgFlystate, MsgState
 import ui
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import copy
 import cv2
 import numpy as np
@@ -126,7 +126,7 @@ class IntensityTrackedBodypart(object):
             self.mask.xMax = None
             self.mask.yMax = None
             
-            rospy.logwarn('%s: Empty mask.' % self.name)
+            runtime.logwarn('%s: Empty mask.' % self.name)
     
         
     # set_background()
@@ -243,7 +243,7 @@ class IntensityTrackedBodypart(object):
         
         # Check for handle hits.
         if (self.params['gui'][self.name]['track']):
-            for tagHandle,handle in self.handles.iteritems():
+            for tagHandle,handle in self.handles.items():
                 if (handle.hit_test(ptMouse)):
                     tag = tagHandle
                     break
@@ -254,7 +254,7 @@ class IntensityTrackedBodypart(object):
     def draw_handles(self, image):
         # Draw all handle points, or only just the hinge handle.
         if (self.params['gui'][self.name]['track']):
-            for tagHandle,handle in self.handles.iteritems():
+            for tagHandle,handle in self.handles.items():
                 handle.draw(image)
 
     

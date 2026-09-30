@@ -8,6 +8,47 @@ The software runs on ROS, the Robot Operating System, and can use any camera or 
 
 
 
+Standalone video mode (Windows/Linux/macOS, Python 3, no ROS)
+---------------------------------------------------------------
+nodes/kinefly.py also runs without ROS, on recorded video:  .avi, .mp4 (or anything else OpenCV reads) and BIAS .ufmf files.  The tracking and the window (handles, toolbar) are the same as described below; the ROS-specific parts of this README (launch files, topics, rosbag, Phidgets, LED panels) don't apply.
+
+Setup (once):  install pixi (https://pixi.sh), then in this directory:
+    pixi install
+
+Run:
+    pixi run kinefly path\to\video.avi
+    pixi run kinefly path\to\video.mp4
+    pixi run kinefly path\to\video.ufmf
+
+Kinefly starts paused on the first frame.  Drag the handles onto the fly, then press space to start (space pauses again; q or Esc quits).  The handle positions are saved to ~/kinefly.yaml, and reloaded next time; use --gui-yaml to keep one file per camera setup.
+
+There are two modes, and the file type picks the default:
+* offline (default for .avi and .mp4):  every frame is tracked, as fast as the computer allows.  The results are the same on every run.  Frame times come from the file (so variable-framerate .mp4s are timed correctly), or from the framerate if the file has none.
+* realtime (default for .ufmf):  frames are delivered at the rate they were recorded, using the timestamps in the file, and frames are dropped whenever tracking falls behind, as with a live camera.
+--offline and --realtime override the default.  Running the same .ufmf both ways, then comparing, shows what realtime operation costs:
+    pixi run kinefly video.ufmf --offline --no-pause
+    pixi run kinefly video.ufmf --realtime --no-pause
+    pixi run compare video_kinefly_offline.csv video_kinefly_realtime.csv
+
+Results go to <video>_kinefly_<mode>.csv, one row per tracked frame:
+* frame, stamp:  the frame's index in the video, and its time (s) from the start of the recording.  In realtime mode, the frames that were dropped have no row.
+* t_acquired, t_done, latency_ms, process_ms:  when the frame arrived and when its results were ready (s, on the computer's clock), the time between those, and the time spent tracking it.
+* dropped_total:  frames dropped so far (realtime mode).
+* head_angle, head_radius, abdomen_angle, abdomen_radius, left_angle, right_angle:  as in "Output Variables" below; angles in radians, radii in pixels of the original image.  With n_edges_max > 1, the wings have left_angle_0, left_angle_1, etc.
+* aux_intensity, aux_freq:  the aux region's intensity, and wingbeat frequency (Hz).
+
+Other options (pixi run kinefly --help lists them all):
+* --scale 0.5:  track at half resolution, which is faster.
+* --display-hz 10:  refresh the window less often, leaving more time for tracking.
+* --no-gui:  no window, just the CSV.
+* --loop:  replay continuously, e.g. while positioning the handles (no CSV unless --csv is given).
+* --params FILE:  a yaml file of other parameters (trackers, thresholds, wingbeat band); see params_example.yaml.
+* Several videos, or wildcards, run one after another with the same handles.
+
+Tests:  pixi run test
+
+
+
 Contents:
 ---------------------------
 Installation

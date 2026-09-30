@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import copy
 import cv2
 import numpy as np
@@ -43,7 +43,8 @@ def get_intersection(pt1a, pt1b, pt2a, pt2b):
 # get_projection_onto_axis()
 # Project the given point onto the axis.
 #
-def get_projection_onto_axis(ptAnywhere, (ptAxisBase, ptAxisHead)):
+def get_projection_onto_axis(ptAnywhere, axis):
+    (ptAxisBase, ptAxisHead) = axis
     # Project the point onto the body axis.
     ptB = ptAxisHead - ptAxisBase
     ptM = ptAnywhere - ptAxisBase
@@ -52,7 +53,8 @@ def get_projection_onto_axis(ptAnywhere, (ptAxisBase, ptAxisHead)):
     return ptAxis
     
             
-def get_reflection_across_axis(ptAnywhere, (ptAxisBase, ptAxisHead)):
+def get_reflection_across_axis(ptAnywhere, axis):
+    (ptAxisBase, ptAxisHead) = axis
     ptAxis = get_projection_onto_axis(ptAnywhere, (ptAxisBase, ptAxisHead))
     ptReflected = ptAnywhere + 2*(ptAxis-ptAnywhere)
     
@@ -99,7 +101,7 @@ class PolarTransforms(object):
     def _get_transform_polar_log(self, i_0, j_0, i_n, j_n, nRho, dRho, nTheta, theta_0, theta_1):
         transform = self._transforms.get((i_0, j_0, i_n, j_n, nRho, nTheta, theta_0, theta_1))
     
-        if (transform == None):
+        if (transform is None):
             i_k     = []
             j_k     = []
             rho_k   = []
@@ -177,11 +179,12 @@ class PolarTransforms(object):
         return imgTransformed
 
 
-    def _get_transform_polar_elliptical(self, i_0, j_0, i_n, j_n, (raxial, rortho), drStrip, angleEllipse, nRho, nTheta, theta_0, theta_1, rClip):
+    def _get_transform_polar_elliptical(self, i_0, j_0, i_n, j_n, radii, drStrip, angleEllipse, nRho, nTheta, theta_0, theta_1, rClip):
+        (raxial, rortho) = radii
         nTheta = max(1,nTheta)
         transform = self._transforms.get((i_0, j_0, i_n, j_n, nRho, drStrip, nTheta, theta_0, theta_1, rClip))
     
-        if (transform == None):
+        if (transform is None):
             i_k     = []
             j_k     = []
             rho_k   = []

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import numpy as np
 
 
@@ -30,10 +30,10 @@ class WingbeatDetector(object):
         
 
     def warn(self):    
-        rospy.logwarn('Note: The wingbeat detector is set to measure wingbeat frequencies in the ')
-        rospy.logwarn('band [%0.1f, %0.1f] Hz.  To make a valid measurement, the camera ' % (self.fw_min, self.fw_max))
-        rospy.logwarn('framerate must be in, and stay in, one of the following ranges:')
-        rospy.logwarn(self.fs_dict['fs_range_list'])
+        runtime.logwarn('Note: The wingbeat detector is set to measure wingbeat frequencies in the ')
+        runtime.logwarn('band [%0.1f, %0.1f] Hz.  To make a valid measurement, the camera ' % (self.fw_min, self.fw_max))
+        runtime.logwarn('framerate must be in, and stay in, one of the following ranges:')
+        runtime.logwarn(self.fs_dict['fs_range_list'])
 
 
     # fs_dict_from_wingband()
@@ -158,7 +158,7 @@ class WingbeatDetector(object):
             (fbb_min, fbb_max) = self.get_baseband_range(fs, m)
         else:
             fbb_min = 0.0
-            fbb_max = np.Inf
+            fbb_max = np.inf
 
         
         return (bValid, np.array([fbb_min, fbb_max]))
@@ -211,7 +211,7 @@ class WingbeatDetector(object):
             else:
                 freq = self.fw_min + f_offset
 
-            #rospy.logwarn((fs, [fbb_min, fbb_max], bReverse, i_max, f_width, np.fft.fftfreq(self.n)[i_max], f_offset, freq))
+            #runtime.logwarn((fs, [fbb_min, fbb_max], bReverse, i_max, f_width, np.fft.fftfreq(self.n)[i_max], f_offset, freq))
         
         else:
             freq = 0.0

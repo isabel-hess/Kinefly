@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-import rospy
+import kinefly_runtime as runtime
 import cv2
 import numpy as np
-from std_msgs.msg import Float32, Header, String
 from imagewindow import ImageWindow
 from tracker_axis import AxisTracker
 from tracker_area import AreaTracker
@@ -10,7 +9,7 @@ from tracker_edge import EdgeTrackerByIntensityProfile, EdgeTrackerByHoughTransf
 from tracker_tip import TipTracker
 from tracker_intensity import IntensityTracker
 import ui
-from Kinefly.msg import MsgFlystate, MsgState
+from kinefly_msgs import Header, MsgFlystate, MsgState
 import imageprocessing
 
 
@@ -18,7 +17,6 @@ import imageprocessing
 ###############################################################################
 class Fly(object):
     def __init__(self, params={}):
-        self.nodename = rospy.get_name().rstrip('/')
         EdgeTracker = EdgeTrackerByIntensityProfile
         #EdgeTracker = EdgeTrackerByHoughTransform
 
@@ -36,7 +34,7 @@ class Fly(object):
         elif (params['head']['tracker']=='intensity'):
             self.head    = IntensityTracker(name='head', params=params, color='cyan',    bEqualizeHist=False)
         else:
-            rospy.logwarn('Head tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
+            runtime.logwarn('Head tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
              
         # Create the abdomen tracker.        
         if (params['abdomen']['tracker']=='area'):
@@ -48,7 +46,7 @@ class Fly(object):
         elif (params['abdomen']['tracker']=='intensity'):
             self.abdomen    = IntensityTracker(name='abdomen', params=params, color='magenta',    bEqualizeHist=False)
         else:
-            rospy.logwarn('Abdomen tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
+            runtime.logwarn('Abdomen tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
              
         # Create the right wing tracker.        
         if (params['right']['tracker']=='area'):
@@ -60,7 +58,7 @@ class Fly(object):
         elif (params['right']['tracker']=='intensity'):
             self.right    = IntensityTracker(name='right', params=params, color='red',    bEqualizeHist=False)
         else:
-            rospy.logwarn('Right wing tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
+            runtime.logwarn('Right wing tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
              
         # Create the left wing tracker.        
         if (params['left']['tracker']=='area'):
@@ -72,7 +70,7 @@ class Fly(object):
         elif (params['left']['tracker']=='intensity'):
             self.left    = IntensityTracker(name='left', params=params, color='green',    bEqualizeHist=False)
         else:
-            rospy.logwarn('Left wing tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
+            runtime.logwarn('Left wing tracker parameter must be one of [''area'', ''edge'', ''tip'', ''intensity'']')
              
         # Create the aux tracker.        
         self.aux    = IntensityTracker(name='aux',    params=params, color='yellow',    bEqualizeHist=False)
@@ -88,10 +86,9 @@ class Fly(object):
         self.iCount  = 0
         self.stampPrev = None
         self.stampPrevAlt = None
-        self.stamp = rospy.Time(0)
+        self.stamp = 0.0
         
 
-        self.pubFlystate = rospy.Publisher(self.nodename+'/flystate', MsgFlystate, queue_size=100)
  
 
     def set_params(self, params):
@@ -163,16 +160,16 @@ class Fly(object):
     # Calculate what we think the bInvertColor flag should be to make white-on-black.        
     def get_invertcolor(self, image):
         # Get a roi around the body center.
-        xMin = max(0,self.ptBodyCenter_i[0]-int(0.75*self.rInvertColorArea))
-        yMin = max(0,self.ptBodyCenter_i[1]-int(0.75*self.rInvertColorArea))
-        xMax = min(self.ptBodyCenter_i[0]+int(0.75*self.rInvertColorArea), image.shape[1]-1)
-        yMax = min(self.ptBodyCenter_i[1]+int(0.75*self.rInvertColorArea), image.shape[0]-1)
+        xMin = int(max(0,self.ptBodyCenter_i[0]-int(0.75*self.rInvertColorArea)))
+        yMin = int(max(0,self.ptBodyCenter_i[1]-int(0.75*self.rInvertColorArea)))
+        xMax = int(min(self.ptBodyCenter_i[0]+int(0.75*self.rInvertColorArea), image.shape[1]-1))
+        yMax = int(min(self.ptBodyCenter_i[1]+int(0.75*self.rInvertColorArea), image.shape[0]-1))
         imgInvertColorArea = image[yMin:yMax, xMin:xMax]
         self.windowInvertColorArea.set_image(imgInvertColorArea)
 
         # Midpoint between darkest & lightest colors.
         threshold = np.mean(image) 
-        #rospy.logwarn((np.min(image), np.median(image), np.mean(image), np.max(image), np.mean(imgInvertColorArea)))
+        #runtime.logwarn((np.min(image), np.median(image), np.mean(image), np.max(image), np.mean(imgInvertColorArea)))
         
         # If the roi is too dark, then set bInvertColor.
         if (np.mean(imgInvertColorArea) <= threshold):
@@ -214,13 +211,13 @@ class Fly(object):
             # Get the dt.  Keep track of both the camera timestamp, and the now() timestamp,
             # and use the now() timestamp only if the camera timestamp isn't changing.
             self.stamp = self.header.stamp
-            stampAlt = rospy.Time.now()
+            stampAlt = runtime.now()
             if (self.stampPrev is not None):
-                dt = max(0.0, (self.header.stamp - self.stampPrev).to_sec())
+                dt = max(0.0, self.header.stamp - self.stampPrev)
                 
                 # If the camera is not giving good timestamps, then use our own clock.
                 if (dt == 0.0):
-                    dt = max(0.0, (stampAlt - self.stampPrevAlt).to_sec())
+                    dt = max(0.0, stampAlt - self.stampPrevAlt)
                     self.stamp = stampAlt
 
                 # If time wrapped, then just assume a value.
@@ -254,7 +251,12 @@ class Fly(object):
         self.windowInvertColorArea.show()
         
     
-    def publish(self):
+    # get_flystate()
+    # Return the current state of all the bodyparts as a MsgFlystate.  The bodypart
+    # states are live objects that change on the next update(), so consumers must
+    # copy what they need before then.
+    #
+    def get_flystate(self):
         flystate              = MsgFlystate()
         flystate.header       = Header(seq=self.iCount, stamp=self.stamp, frame_id='Fly')
 
@@ -286,7 +288,7 @@ class Fly(object):
 
         self.iCount += 1
         
-        self.pubFlystate.publish(flystate)
+        return flystate
         
 
 
