@@ -25,13 +25,13 @@ abdomen:
   feathering: 0.25
   saturation_correction: false
 left:
-  tracker: area
+  tracker: edge
   autozero: true
   threshold: 0.0
   feathering: 0.25
   saturation_correction: false
 right:
-  tracker: area
+  tracker: edge
   autozero: true
   threshold: 0.0
   feathering: 0.25
