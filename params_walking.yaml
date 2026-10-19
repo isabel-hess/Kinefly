@@ -1,4 +1,4 @@
-# Example Kinefly parameters, for:  python nodes/kinefly.py VIDEO --params params_example.yaml
+# Example Kinefly parameters, for:  python nodes/kinefly.py VIDEO --params params_walking.yaml
 # Everything here is optional; anything left out takes the default shown.
 # (Handle positions are separate:  they're saved in the --gui-yaml file as you drag them.)
 
