@@ -1,0 +1,38 @@
+# Example Kinefly parameters, for:  python nodes/kinefly.py VIDEO --params params_example.yaml
+# Everything here is optional; anything left out takes the default shown.
+# (Handle positions are separate:  they're saved in the --gui-yaml file as you drag them.)
+
+scale_image: 1.0          # Scale the images before tracking; smaller is faster.  --scale overrides this.
+n_queue_images: 2         # Realtime mode:  frames buffered before the oldest is dropped.
+display_hz: 30.0          # How often to refresh the window.  --display-hz overrides this.
+use_gui: true             # --no-gui overrides this.
+n_edges_max: 3            # Max edges to report per wing (edge tracker).
+rc_background: 1000.0     # Time constant (s) of the moving-average background, for background subtraction.
+wingbeat_min: 180         # Wingbeat frequency band (Hz) for the aux intensity tracker.
+wingbeat_max: 220
+
+# Per bodypart:  tracker is one of area, edge, tip, intensity.
+head:
+  tracker: area
+  autozero: true
+  threshold: 0.0
+  feathering: 0.0
+  saturation_correction: false
+abdomen:
+  tracker: tip
+  autozero: true
+  threshold: 0.0
+  feathering: 0.25
+  saturation_correction: false
+left:
+  tracker: edge
+  autozero: true
+  threshold: 0.0
+  feathering: 0.25
+  saturation_correction: false
+right:
+  tracker: edge
+  autozero: true
+  threshold: 0.0
+  feathering: 0.25
+  saturation_correction: false
