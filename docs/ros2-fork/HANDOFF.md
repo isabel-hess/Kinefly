@@ -1,7 +1,7 @@
 # Kinefly → ROS 2: context and plan
 
-Handoff from the Claude Code session of 2026-09-22 to 2026-10-19, for starting the ROS 2 work in a fresh session.
-Written 2026-10-19.
+Handoff from the Claude Code session of 2026-09-22 to 2026-10-21, for starting the ROS 2 work in a fresh session.
+Written 2026-10-19; updated 2026-10-21 with the camera facts, the camera tests and the camera-path decision.
 
 ## 1. Goal and decisions
 
@@ -27,26 +27,85 @@ Written 2026-10-19.
 - **Camera images are mono8** (for now). The helper accepts only mono8/8UC1 and rejects anything else loudly. If the camera changes to Bayer or color, add those encodings; `cv2.cvtColor` handles Bayer → gray, so cv_bridge still isn't needed.
 - **Wings use the original edge trackers, not area trackers.**
   - Head = area, abdomen = tip, left/right = edge, as in `params_example.yaml` and `params_walking.yaml` (the walking version uses `n_edges_max: 3`).
+- **Camera path: BIAS owns the camera, and a new BIAS plugin passes frames to Kinefly through Windows shared memory** (Isabel, 2026-10-21; plan in §5, Camera path).
+  - BIAS stays the only program connected to the camera, and keeps recording `.ufmf` of every experiment.
+  - Kinefly reads frames from shared memory in its own process, tracks them, and publishes results to ROS 2.
+  - Each frame carries the camera's frame ID and timestamp, so live results can be matched to the recorded `.ufmf` frame by frame.
+  - Alternatives considered (§2): Kinefly owning the camera through Arena would lose BIAS's `.ufmf` recording. Multicast to a listener on the same PC failed in testing. Multicast to a second PC is untested and needs more hardware.
 
 ## 2. The camera (the real target)
 
-**1440×1080 px at 166.3 fps.** Not yet confirmed: whether it's mono8; which camera and driver will feed ROS 2 (see 6.4).
+### The camera
 
-| Quantity | Value |
+**Lucid Triton2 1.6 MP, Sony IMX273, mono: TRT016S-M.** Product page: https://thinklucid.com/product/triton2-16-mp-imx273/
+
+Read from the camera on 2026-10-21:
+
+| Item | Value |
 |---|---|
-| Frame period | **6.01 ms** |
-| Data rate (mono8) | 1.56 MB/frame × 166.3 = **259 MB/s** (3× that if the stream were RGB/Bayer) |
-| Wingbeat estimate | Valid. 166.3 fps is inside the [146.7, 180] fps range the 180–220 Hz band needs. |
+| Serial | 262101398 |
+| Firmware | 1.62.0.0 |
+| Sensor | 1440×1080, global shutter, 3.45 µm pixels, 12-bit ADC |
+| Link | 2.5GBASE-T on **Ethernet 4** (Realtek 2.5GbE, jumbo frames 9014 enabled on the NIC). Link-local addresses: camera 169.254.229.179, PC 169.254.168.2. |
+| Pixel format | Mono8 (also Mono10/10p/12/12p/16) |
+| Packet size | `GevSCPSPacketSize` = 1400. Full-rate streaming worked at this size with no losses. |
+| Exposure | `ExposureAuto` = Continuous, `ExposureTime` max 5953.6 µs at full rate (19.6 µs minimum) |
+| Frame rate | `AcquisitionFrameRateEnable` = False; the `AcquisitionFrameRate` node max is 166.306 |
+| Trigger | Off |
+| PTP | Off (available) |
+| Other features (spec page) | 128 MB image buffer; binning, decimation, ROI, flips; chunk data with timestamp; hardware trigger I/O |
 
-**Tracking cost** measured on this PC, 1440×1080, with the real handle file (`oracle_handles_1440x1080.yaml`, wing outer radius about 450 px). Every number is milliseconds of tracking per frame, not counting decoding:
+**The camera actually runs at 168.4 fps.**
+- **Free-running:** with `AcquisitionFrameRateEnable` False, the camera runs at the sensor maximum. Measured from its own timestamps: **168.416 fps, 5.938 ms between frames.** That's also exactly the rate of the .avi test recording.
+- **The 166.3 fps on the spec page** is the maximum frame-rate setting, which reserves 10% of the link for resending packets. BIAS turns the frame-rate limit on when it connects (§8), so under BIAS the camera should run at the configured rate, at most 166.3 fps. Confirm the rate BIAS actually gets in step C0 (§5).
 
-| Implementation | First frame | After that (mean / 95th percentile) | Keeps up with 166.3 fps? |
+| Quantity | At 166.3 fps | At 168.4 fps (free-running) |
+|---|---|---|
+| Frame period | 6.01 ms | 5.94 ms |
+| Data rate (mono8, 1.56 MB/frame) | 259 MB/s (2.07 Gb/s) | 262 MB/s (2.10 Gb/s) |
+| Wingbeat estimate (180–220 Hz band) | Valid; needs 146.7–180 fps | Valid; needs 146.7–180 fps |
+
+Both data rates need the 2.5 Gb/s link; they won't fit 1 GbE.
+
+### Tracking cost
+
+Measured on this PC at 1440×1080 with the real handle file (`oracle_handles_1440x1080.yaml`, wing outer radius about 450 px). Milliseconds of tracking per frame, not counting decoding or getting the frame:
+
+| Implementation | First frame | After that (mean / 95th percentile) | Keeps up with ~6 ms frames? |
 |---|---|---|---|
 | Rewrite, full resolution | 68 | 13.5 / 14.6 | **No** (≈74 fps max) |
 | Standalone, full resolution | 2672 | 15.4 / 16.7 | No |
-| Standalone, `--scale 0.5` | 644 | 4.2 / 4.8 | Yes, with ~1.8 ms to spare |
+| Standalone, `--scale 0.5` | 644 | 4.2 / 4.8 | Yes, with ~1.2–1.8 ms to spare |
 
-So the ROS 2 version must reduce the work per frame. Options: implement the rewrite's (currently ignored) `scale_image`; downscale at the source; or use smaller tracking regions or ROI crops. Measure again on flying-fly footage, since handle sizes drive the cost.
+So the ROS 2 version must reduce the work per frame. Options:
+- implement the rewrite's (currently ignored) `scale_image`;
+- crop to a region of interest;
+- use smaller tracking regions;
+- bin on the camera. That would also shrink BIAS's recordings, since BIAS records the same frames.
+
+Copying a frame out of the camera driver into numpy costs another 0.5 ms (measured). Re-measure on flying-fly footage, since handle sizes drive the cost.
+
+### Camera access tests (2026-10-21)
+
+Run with Lucid's Python API, `arena_api` 2.9.5 on Arena SDK 1.0.80.56, at full resolution and rate, 1440×1080 Mono8. Each test copied every frame into numpy. Scripts are in `docs/ros2-fork/camera_tests/` (`mc_test.py`, `mc_analyze.py`, `mc_join.py`; see `arena_env.py` for setup).
+
+| Test | Result |
+|---|---|
+| One receiver, no multicast, 10 s | **1685 / 1685 frames**, none incomplete. Python keeps up with the full stream. |
+| Multicast on, controlling program only | **No frames.** The camera streamed to 239.10.10.10, but Windows never joined that group on Ethernet 4, so the NIC dropped the packets (0 multicast packets counted). |
+| Same, with a helper socket joined to 239.10.10.10 (`mc_join.py`) | **1348 / 1348 frames**; 1.55 M multicast packets counted on the NIC. |
+| Controlling program + read-only listener on the **same PC** (group joined) | Controller: 4208 of 4211 frames (3 missing and 1 incomplete when the listener started). **Listener: no frames.** |
+
+Conclusions:
+- **Same-PC multicast doesn't work as tested.** Lucid's filter driver seems to deliver the stream to only one receiver per PC. Arena has no setting to switch to ordinary sockets.
+- **Untested:** disabling the Lucid filter driver on Ethernet 4. It's an admin-level change that also affects BIAS, and probably costs much more CPU at 2 Gb/s.
+- **Multicast to a second PC** is the case Lucid documents. It needs a second PC with a 2.5 GbE port and an IGMP-capable switch. Not tested.
+- **After the tests, the camera was back to normal single-receiver streaming,** with the settings it started with.
+
+Practical notes:
+- **Firewall:** a Python whose `python.exe` has no Windows Firewall inbound rule finds no camera. The pixi Pythons on this PC already have rules.
+- **Other filter drivers:** three GigE Vision filter drivers are bound to Ethernet 4: Lucid, Teledyne DALSA Sapera and Point Grey. Disabling the other two on that port is worth trying if discovery or streaming misbehaves.
+- **After a reboot, the camera took a while to answer discovery.**
 
 ## 3. Where things are
 
@@ -64,6 +123,8 @@ So the ROS 2 version must reduce the work per frame. Options: implement the rewr
   - `HANDOFF.md`: this file.
   - `run_fork_on_video.py`: runs the rewrite or fork offline on a video and writes a CSV in the standalone format.
   - `oracle_handles_1440x1080.yaml`: snapshot of the handle file used for all comparisons (`~/kinefly.yaml` as of 2026-10-13, for the 1440×1080 .mp4s).
+  - `test_ros_image_helper.py`: tests for the §7 image helper.
+  - `camera_tests/`: the Arena camera and multicast tests from §2.
 
 ### Test videos (`C:\Users\labadmin\Videos`)
 
@@ -86,7 +147,10 @@ The .avi and .mp4 recordings show a tethered fly **walking with folded wings**, 
   - C++/Qt, MSYS2 ucrt64, Lucid Arena backend.
   - Launch without rebuilding: `build_and_run_bias.bat -n`.
   - Writes `.ufmf` v4 (format in `src/gui/video_writer_ufmf.cpp`). The plugin framework is in `src/plugin/`.
-  - BIAS does **not** publish ROS 2.
+  - BIAS does **not** publish ROS 2. Details that matter for the camera path are in §8.
+- **Lucid Arena SDK** 1.0.80.56: `C:\Program Files\Lucid Vision Labs\Arena SDK`.
+  - C, C++ and .NET libraries are in `x64Release`; HTML docs and examples (including multicast) are in `docs\html`.
+  - Python API: `arena_api` 2.9.5 at `C:\ProgramData\Lucid Vision Labs\ArenaView\ArenaPy\arena_api-2.9.5-py3-none-any.whl`. Not installed in any environment; it needs `pywin32`.
 - **uv** (`~/.local/bin/uv`):
   - It defaults to Python 3.14, which breaks the rewrite's `harvester` extra (GenICam has no 3.14 wheels).
   - uv's own Python 3.12 link is broken here. Create the venv from an explicit interpreter:
@@ -206,16 +270,53 @@ Work through §4 items 1–7, checking each against the oracle:
 - **Item 7 (live state objects):** matters as soon as ROS 2 publishes asynchronously.
 - **Rig defaults:** decide whether to restore the original ones (abdomen = tip; feathering 0.25 except the head; tracker defaults).
 
+### Camera path: BIAS shared-memory plugin (decided 2026-10-21)
+
+This runs in parallel with Phases 0–3: it's BIAS work plus a new Kinefly frame source, and it doesn't touch the tracking core. BIAS facts it depends on are in §8.
+
+**C0. Test BIAS on its own at the camera's full rate first.** BIAS has only been verified at 720×540 and 271 fps, about 40% of this data rate.
+1. Set the logging format to **ufmf**; BIAS defaults to JPG.
+2. Record several minutes at 1440×1080 with the frame rate at its maximum.
+3. Check for dropped frames. BIAS skips them silently, so look for gaps in the timestamps in `stamp_log_cam0.txt` larger than about 1.5 frame periods.
+4. Check whether the ufmf writer reports skipped frames (its warning flag), and look at the CPU load.
+5. Record the frame rate BIAS actually runs at (166.3 or 168.4 fps, see §2).
+6. If BIAS can't keep up, fix that first. Candidates: its two copies per frame in the Arena backend, the per-frame `std::endl` flush of the stamp log, and the number of ufmf compressor threads.
+
+**C1. Make BIAS frames traceable.**
+- Add the camera's frame ID (`acImageGetFrameId`) to `StampedImage`, and keep the camera timestamp in full nanoseconds. Today BIAS uses its own frame counter and truncates the timestamp to microseconds.
+- Write the frame ID to the stamp log.
+- Count timeouts and incomplete frames instead of silently skipping them (`image_grabber.cpp:183-187`).
+
+**C2. Write the shared-memory plugin (C++, inside BIAS, MinGW).**
+- **Shared memory:** one Win32 named file mapping per camera (for example `Local\kinefly_bias_cam0`), plus a named auto-reset event (`Local\kinefly_bias_cam0_frame`) signalled once per frame.
+- **Layout:** a header (magic, version, number of slots, width, height, step, pixel format, index of the newest slot) and a small ring of slots, for example 4. Each slot holds a sequence counter (odd while being written), the camera frame ID, the camera timestamp in ns, BIAS's frame count, and the mono8 pixels.
+- **Writer:** `processFrames` writes each frame into the next slot, updates the newest-slot index, and signals the event. It must **never wait for the reader**:
+  - If Kinefly is slow or not running, older slots are simply overwritten.
+  - The plugin queue in BIAS is unbounded, so `processFrames` must stay fast. Copying 1.56 MB is well under a millisecond.
+- **Registration:** BIAS registers plugins in five hard-coded places (§8).
+- **Constraint:** BIAS runs only **one plugin per camera**, so this one can't run alongside `stampede` or `grab_detector`. If an experiment needs those, either fold their function into this plugin or change BIAS to allow several plugins.
+
+**C3. Write the Kinefly side: a shared-memory frame source (Python).**
+- **Reading:** open the mapping with `mmap.mmap(-1, size, tagname='Local\\kinefly_bias_cam0')`, and wait on the event through `ctypes`/`pywin32` (`OpenEventW`, `WaitForSingleObject`).
+- **Each frame:** take the newest slot, copy the pixels out (≈0.5 ms), and accept the frame only if the slot's sequence counter didn't change during the copy. Then track it.
+- **Drops:** count them from gaps in the camera frame ID. Latency is measured from the camera timestamp, which needs camera and PC clocks related: use PTP, or measure the offset at start-up.
+- **Output:** Kinefly tracks in this process and publishes the `Flystate` message to ROS 2, so full images never have to go through ROS 2. Publish images only if something needs them (display, debugging), downscaled or at a lower rate.
+- **Loop design:** this follows the standalone real-time design: newest frame only, display decoupled, drop and latency statistics.
+
+**C4. Check live results against the recording.**
+- Re-track the `.ufmf` that BIAS recorded during a live session, offline, and match frames by camera timestamp (or frame ID, after C1).
+- Results should be identical for every frame the live run tracked. The remaining frames are the live drops.
+- This works both as the end-to-end check and as the regular way to audit a session.
+
 ### Later phases (discussed, not yet planned in detail)
 
-1. **Benchmark ROS 2 image throughput on this PC at the camera's spec before building on it:**
-   - A dummy publisher at 1440×1080 mono8, 166.3 Hz (259 MB/s).
-   - An rclpy subscriber doing numpy conversion and then tracking.
+1. **Benchmark ROS 2 image throughput, only if full-rate images must go through ROS 2.** With the camera path above, Kinefly gets frames from shared memory, and only results go through ROS 2.
+   - If full-rate images do become necessary: a dummy publisher at 1440×1080 mono8 at ~168 Hz (262 MB/s), and an rclpy subscriber doing the numpy conversion, then tracking.
    - Measure delivered rate, latency and drops.
-   - If rclpy can't sustain it, consider: running the camera driver and Kinefly in one process (intra-process/composable), downscaling or cropping at the source, or loaned messages.
-2. **Choose how camera frames get into ROS 2:** a ROS 2 driver for the Lucid camera that works on Windows, or a BIAS plugin that publishes images. BIAS doesn't publish ROS 2 today.
+   - If rclpy can't sustain it: intra-process or composable nodes, downscaling or cropping at the source, or loaned messages.
+2. **Camera into ROS 2: decided.** BIAS with the shared-memory plugin; see Camera path above.
 3. **Real-time frame loop:**
-   - The image subscription drives tracking: QoS keep-last 1, process only the newest frame, count drops.
+   - The newest frame (from shared memory in C3, or from an image subscription) drives tracking: process only the newest frame and count drops.
    - The display runs separately at about 30 Hz and never blocks tracking. Replace the rewrite's 16 ms QTimer-per-frame loop.
    - Standalone Kinefly already implements this design (`RealtimePlayer`, `get_frame`, `display_hz`, drop and latency stats in `nodes/kinefly.py`).
    - **Qt binding:** PyQt6 (decided, see §1); port the fork's GUI from PySide6.
@@ -280,9 +381,74 @@ def numpy_to_image(a: np.ndarray, stamp: Time, frame_id: str = 'camera') -> Imag
 | `image_to_numpy` | Zero-copy, about 0.001 ms/frame |
 | `numpy_to_image` | 0.82 ms/frame |
 
-`numpy_to_image` costs more because rclpy copies the bytes into its own `array('B')`. That's fine for test publishers at 166.3 Hz (frame budget 6.01 ms). Optimize it only if a publisher becomes a bottleneck.
+`numpy_to_image` costs more because rclpy copies the bytes into its own `array('B')`. That's fine for test publishers at the camera's rate (frame budget 5.94–6.01 ms, §2). Optimize it only if a publisher becomes a bottleneck.
 
 Things to keep in mind:
 - **The array `image_to_numpy` returns is a view of the message's bytes.** rclpy creates a new message per callback, so keeping a frame after the callback is fine. Copy before modifying a frame in place if the same message is also published or recorded.
 - **The tracking core needs a contiguous 2D uint8 array.** Padded images give a non-contiguous view; call `np.ascontiguousarray` there if a tracker or OpenCV function complains. The camera is expected to send unpadded rows (`step == width`).
 - **Stamps:** pass `msg.header.stamp` to the tracker as seconds (`sec + nanosec*1e-9`). That's the camera's time, which is what `Fly.update(image, timestamp)` should get, not the time of arrival.
+
+## 8. BIAS: what the camera path depends on
+
+From a code review on 2026-10-21; nothing below was built or run. Paths are relative to `C:\Users\labadmin\Documents\GitHub\reiserlab\bias`.
+
+**Frame path**
+- **Frame type:** each frame is a `StampedImage` (`src/utility/stamped_image.hpp:8-14`): a `cv::Mat image`, a `double timeStamp` (camera time in seconds since the first frame), `dtEstimate`, and `frameCount`.
+  - `frameCount` is **BIAS's own counter, not the camera's frame ID**, which BIAS never reads.
+  - The camera timestamp comes from `acImageGetTimestampNs` but is kept with only microsecond precision (`camera_device_arena.cpp:431-445`).
+- **Grabbing:** `CameraDevice_arena::grabImage` (`camera_device_arena.cpp:289-355`) waits up to 5 s for a buffer, converts it even when it's already Mono8, then copies it into a `cv::Mat`: **two copies per frame**.
+  - The stream uses `StreamBufferHandlingMode=NewestOnly` (`:235-238`).
+- **Silent drops:** incomplete or timed-out frames return an empty image, and the grabber just skips them (`image_grabber.cpp:183-187`). Dropped frames are visible only as timestamp gaps.
+- **Threads:**
+  - The grabber thread (`image_grabber.cpp:78-313`) runs at TimeCritical priority, pinned to one CPU core, and skips the first 10 frames.
+  - The dispatcher (`image_dispatcher.cpp:106-189`) hands each frame to the logger, plugin and display. It also writes `stamp_log_cam<N>.txt`, flushing on every frame.
+- **ufmf writer** (`video_writer_ufmf.cpp`):
+  - 15 compressor threads by default.
+  - Its to-do queue holds 250 frames; when full, frames are skipped and only a warning flag is raised.
+  - If the logger's queue exceeds 1000 frames, capture stops with an error.
+  - Mono8 only.
+- **Display:** a timer at 15 Hz by default, 60 Hz at most.
+
+**Plugins** (`src/plugin/`)
+- **Base class:** `BiasPlugin` (`src/plugin/base/bias_plugin.hpp:22-89`) is a `QDialog`.
+  - BIAS calls `processFrames(QList<StampedImage>)` from a thread-pool thread at normal priority (`src/gui/plugin_handler.cpp:106-158`).
+  - **Every frame is delivered,** in batches if the plugin is slow.
+  - The plugin queue is unbounded: `MAX_IMAGE_QUEUE_SIZE` is declared but unused.
+  - Plugins also get `reset` (capture start), `stop`, a configuration map, and `runCmdFromMap`, which is reachable over the HTTP control interface.
+- **One plugin per camera** (the "current" one). It must be enabled before capture starts. By default the current plugin is `grabDetector`, and plugins are disabled.
+- **Registering a new plugin needs five edits:**
+  - an `#include` in `src/gui/camera_window.cpp` (around `:57-59`);
+  - a `pluginMap_[...] = new ...` in `camera_window.cpp` (around `:2608-2610`);
+  - `include_directories` in `CMakeLists.txt:126-128`;
+  - `add_subdirectory` in `CMakeLists.txt:207-210`;
+  - its `.ui` file in `src/gui/CMakeLists.txt` FORMS (`:14-16`), plus `target_link_libraries` (`:107-112`).
+  - Each plugin is a static library; copy the pattern in `src/plugin/stampede/`.
+- **Existing plugins:**
+  - `grab_detector`: ROI threshold, plus a serial pulse.
+  - `stampede`: timed stimulus events over serial to a pulse device and a panels controller.
+  - `signal_slot_demo`: passes frame data from camera 0 to camera 1 inside BIAS.
+  - None of them sends frames to another process.
+
+**External control**
+- An HTTP/JSON server on port 5010 for camera 0 (`5000 + 10*(camera+1)`), on by default (`src/gui/ext_ctl_http_server.cpp`).
+- Requests look like `GET /?cmd=value`. Commands include connect, start-capture, stop-capture, enable-logging, set-configuration and get-status, plus `plugin-cmd`, which passes JSON to the current plugin.
+- Camera and logging settings can't be changed while capturing.
+- Usage: `docs/building-on-windows.md` §4.
+
+**Camera settings BIAS applies** (`camera_device_arena.cpp:158-177`, `:228-247`)
+- `ExposureAuto` Off and `GainAuto` Off.
+- **`AcquisitionFrameRateEnable` = true,** with the frame rate clamped to the node range (max 166.3 here).
+- Free-run trigger by default; Line0 rising edge for an external trigger.
+- Packet size auto-negotiation and packet resend on.
+- Pixel format is never set; BIAS uses whatever the camera is set to (Mono8 now).
+- ROI is supported; binning and decimation aren't.
+- The camera is opened with read-write control and a normal single-receiver (unicast) stream. Multicast isn't supported.
+
+**Toolchain**
+- MSYS2 ucrt64 GCC 16.1 (MinGW), Qt 5.15.19 and OpenCV 4.13 from MSYS2. It links Arena's **C** API (`ArenaC_v140`), because the MSVC-built C++ API won't link with MinGW.
+- **ROS 2 (MSVC) can't be linked into BIAS:**
+  - the MinGW and MSVC C++ ABIs are incompatible;
+  - BIAS builds as C++11 (`-std=gnu++0x`), but rclcpp needs C++17;
+  - ROS 2's MSVC Qt and OpenCV DLLs would clash with BIAS's.
+- That's why the camera path uses plain Win32 shared memory, which works across both toolchains.
+- `docs/pixi-conversion-plan.md` in the BIAS repo scopes an MSVC port of BIAS. It hasn't been done.
